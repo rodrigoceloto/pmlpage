@@ -1,0 +1,294 @@
+
+---
+output: html_document
+---
+---
+title: "Predicting exercise performance"
+output: html_document
+---  
+
+```{r setup, echo=FALSE,include=TRUE}
+knitr::opts_chunk$set(cache=TRUE)
+```
+
+###Execute Summary
+
+The goal of this project is to predict the manner which six individuals performed barbell lifts. The predicted variable is the way exercise was performed, which assumes 5 different values being one of them the correct execution. The predictor variables were data obtained from accelerometers on the belt, forearm, arm and dumbbell of participants.
+
+It was chosen a Blending model based on three different models, Bagging, Random Forest and Boosting. The Blending model obtained 100% of accuracy and kappa when applied to an out-of-sample validation dataset.
+
+###Credits
+
+The database of this work is based on the following study:
+
+Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. Wearable Computing: Accelerometers' Data Classification of Body Postures and Movements. Proceedings of 21st Brazilian Symposium on Artificial Intelligence. Advances in Artificial Intelligence - SBIA 2012. In: Lecture Notes in Computer Science. , pp. 52-61. Curitiba, PR: Springer Berlin / Heidelberg, 2012. ISBN 978-3-642-34458-9. DOI: 10.1007/978-3-642-34459-6_6. 
+
+Read more: http://groupware.les.inf.puc-rio.br/har
+
+###Database description
+```{r, echo=FALSE,message=FALSE}
+    Sys.setenv(LANG="EN")
+    library(caret)
+    library(ggplot2)
+    library(gridExtra)
+    library(doMC)
+
+    set.seed(1975)
+```
+
+Training and test datasets used in this work were provided for the course Practical Machine Learning of Johns Hopkins University at Coursera. These datasets can be obtained here:
+
+* Training: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+* Testing: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+```{r, echo=FALSE,message=FALSE}
+    #Get training data
+    data_url_training <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+    download.file(data_url_training,'training.csv',method="curl")
+    training<-read.csv("training.csv")
+    
+    #Get testing data
+    data_url_testing <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+    download.file(data_url_testing,'testing.csv',method="curl")
+    testing<-read.csv("testing.csv")
+```
+
+###Variables
+
+The objective of this work was to predict the categorical variable `classe`, which assumes 5 values A, B, C, D and E. It was considered as predictor variables only the ones captured by the accelerometer. The variables timestamp, window and user were not considered as predictor variables.
+
+The dataset consists of 160 variables, being one the response variable, 152 the potential predictors and 7 were not considered. All potential predictors are numerical variables.
+
+###Data cleaning
+
+Columns with NA values and DIV/0! values removed from the data. The reason for not using imputation was that in both cases the percentage of NA values and blank values in those variables were bigger than 50%.
+
+```{r, echo=FALSE,message=FALSE}
+    #Clean Training dataset
+        #Columns with NA values
+        naColumns<-colSums(is.na(training))!=0
+        cleanNaColumns<-colSums(is.na(training))==0
+    
+        #Columns with DIV/0! values
+        div0Columns<-apply(training,2,function(x) sum(grepl("#DIV/0!",x)))!=0
+        cleanDiv0Columns<-apply(training,2,function(x) sum(grepl("#DIV/0!",x)))==0
+    
+        #Columns with NA & DIV/0! values 
+        allCleanColumns<-cleanNaColumns==TRUE & cleanDiv0Columns==TRUE
+        training<-training[,allCleanColumns]
+
+    #Clean Testing dataset
+        #Columns with NA values
+        naColumns<-colSums(is.na(testing))!=0
+        cleanNaColumns<-colSums(is.na(testing))==0
+        
+        #Columns with DIV/0! values
+        div0Columns<-apply(testing,2,function(x) sum(grepl("#DIV/0!",x)))!=0
+        cleanDiv0Columns<-apply(testing,2,function(x) sum(grepl("#DIV/0!",x)))==0
+        
+        #Columns with NA & DIV/0! values    
+        allCleanColumns<-cleanNaColumns==TRUE & cleanDiv0Columns==TRUE
+        testing<-testing[,allCleanColumns]
+ 
+    #Explicative variables range - 8:59
+```
+
+After removing these columns it remained 52 predictor variables from the original 152 potential ones.
+
+###Exploratory analysis
+
+The predictor variables were preprocessed by the methods of CARET package "YeoJohnson","center", "scale","pca". The purpose of preprocessing was respectively: "symmetry", "centering", "scaling" and "dimensional reduction".
+
+The first chart from the figure below shows that the first and second principal components create five clear different clusters, which were estimated by Kmeans method.
+
+The second plot does not show a relationship between the cluster and the response variable `classe`.
+
+The third plot shows that clusters are mostly related to the individuals of the study.
+
+This unsupervised learning cannot identify if there is predictive power in the predictor variables considering we are looking for predicting the variable `classe` and it is not related to cluster. This does mean that they do not have predictive power; it means we were unable to find it with principal components and cluster analysis.
+
+```{r, echo=FALSE,message=FALSE,warning=FALSE}
+    #PCA
+    preProcValues <- preProcess(training[8:59], method = c("YeoJohnson","center", "scale","pca"),thresh=0.95)
+    trainTransformed <- predict(preProcValues, training[8:59])
+
+    kmeans<-kmeans(trainTransformed,centers=5)
+    cluster<-kmeans$cluster
+    classe<-training$classe
+    user<-training$user_name
+    p1<-qplot(PC1,PC2,colour=cluster,data=trainTransformed)+ggtitle("Principal Components and Clusters")+theme(legend.position = "bottom",legend.direction="horizontal",plot.title=element_text(size=6),axis.title=element_text(size=8))+guides(colour = guide_legend(nrow = 3))
+    p2<-qplot(PC1,PC2,colour=classe,data=trainTransformed)+ggtitle("Principal Components and Classes")+theme(legend.position = "bottom",legend.direction="horizontal",plot.title=element_text(size=6),axis.title=element_text(size=8))+guides(colour = guide_legend(nrow = 3))
+    p3<-qplot(PC1,PC2,colour=user,data=trainTransformed)+ggtitle("Principal Componentes and Individuals")+theme(legend.position = "bottom",legend.direction="horizontal",plot.title=element_text(size=6),axis.title=element_text(size=8))+guides(colour = guide_legend(nrow = 3))
+    grid.arrange(p1,p2,p3,ncol=3,nrow=1)
+
+```
+
+
+
+###Variables transformation
+
+It was not to applied any kind of transformation in the predictor variables since it is going to be used learning methods not sensitive to scale, asymmetry or multicollinearity; therefore, the transformations made for unsupervised learning were not used for supervised learning.
+
+
+###Partition for validation
+
+For the purposes of model validation, the original training dataset was split in two, training (80%) and validating (20%), where the model was respectively fitted and evaluated.
+
+All models were fitted using cross validation in the new subset training dataset and its results were applied only once in the validation dataset, i.e., even using cross-validation for fitting the model we still applied the estimated model in a completed unused dataset for validation. 
+
+```{r, echo=FALSE,message=FALSE,warning=FALSE}
+    inTrain<-createDataPartition(y=training$classe,p=0.8,list=FALSE)
+    training<-training[inTrain,]
+    validating<-training[-inTrain,]
+```
+
+###Cross validation for fitting
+
+For purposes of controlling overfitting in the training dataset we used the CARET function `trainControl` set with 10-fold Cross Validation ("cv") method.
+
+```{r, echo=FALSE,message=FALSE,warning=FALSE}
+fitControl<-trainControl(method="cv",number=10,repeats=1)
+```
+
+
+###Model fitting
+
+It was fitted three different models using the `CARET` package:   
+1. **Bagging** - treebag method  
+2. **Random forest** - rf method  
+3. **Boosting** - gbm method  
+  
+Once these there models were fitted in the training dataset, each one was applied in the validation dataset.
+
+
+  
+
+```{r, echo=FALSE,message=FALSE,warning=FALSE,results='hide'}
+    #Parallel processing
+    registerDoMC(cores = 4)
+
+    #Bagging forest model fit
+
+    bagFit <- train(classe ~ ., data = training[,8:60],
+                 method = "treebag",
+                 trControl = fitControl,
+                 verbose = FALSE)
+    bagFit
+
+    #Random forest model fit
+    rfFit <- train(classe ~ ., data = training[,8:60],
+                 method = "rf",
+                 trControl = fitControl,
+                 verbose = FALSE)
+    rfFit
+
+    #Boosting model fit
+    gbmFit <- train(classe ~ ., data = training[,8:60],
+                 method = "gbm",
+                 trControl = fitControl,
+                 verbose = FALSE)
+    gbmFit
+```
+
+All three models had high level of performance (accuracy and kappa of 100%) in the 10-fold cross-validated fitting of the CARET package.
+
+
+The three models also had very good performance in the out-of-sample validation dataset. The bagging and random forest model had 100% of accuracy while the boosting model had 97,7%.  
+
+####Bagging Out-of-sample error
+```{r, echo=FALSE,message=FALSE,warning=FALSE}
+            #Validating
+            confusionMatrix(predict(bagFit,validating[,8:60]),validating$classe)
+```
+
+####Random forest Out-of-sample error
+```{r, echo=FALSE,message=FALSE,warning=FALSE}
+            confusionMatrix(predict(rfFit,validating[,8:60]),validating$classe)
+```
+
+####Boosting Out-of-sample error
+```{r, echo=FALSE,message=FALSE,warning=FALSE}
+            confusionMatrix(predict(gbmFit,validating[,8:60]),validating$classe)
+```
+
+
+```{r, echo=FALSE,message=FALSE,warning=FALSE}
+            #Testing
+            predTestBagFit<-predict(bagFit,testing[,8:60])
+            predTestRfFit<-predict(rfFit,testing[,8:60])
+            predTestGbmFit<-predict(gbmFit,testing[,8:60])
+    
+            predTesting<-data.frame(predBagFit=predTestBagFit,predRfFit=predTestRfFit,predGbmFit=predTestGbmFit)
+```
+
+###Blending
+
+A blending model is not expected to increase the predictive performance in this case given that the three previous models had already a very high level of performance.
+
+Nevertheless, a blending model was fitted for academic purposes. It was based in the above three models (Bagging, Random Forest and Boosting) and was fitted using a Boosting Model ("gbm") with 10-fold cross validation.
+
+As expected, it had 100% of accuracy in the cross validation once two of three models which it is based already had 100% of accuracy.
+
+
+```{r, echo=FALSE,message=FALSE,warning=FALSE,results='hide'}
+    #Blending fit
+    predTrainBagFit<-predict(bagFit,training[,8:60])
+    predTrainRfFit<-predict(rfFit,training[,8:60])
+    predTrainGbmFit<-predict(gbmFit,training[,8:60])
+    
+    predTraining<-data.frame(predTrainBagFit,predTrainRfFit,predTrainGbmFit,classe=training$classe)
+    
+    
+    gbmBlendingFit <- train(classe ~ ., data = predTraining,
+                    method = "gbm",
+                    trControl = fitControl,
+                    verbose = FALSE)
+    gbmBlendingFit
+```
+
+It also had 100% in accuracy in the completely out-of-sample dataset validation dataset as shown below.
+
+####Blending Out-of-sample error
+```{r, echo=FALSE,message=FALSE,warning=FALSE}
+    #Validation
+    predValidBagFit<-predict(bagFit,newdata=validating[,8:60])
+    predValidRfFit<-predict(rfFit,newdata=validating[,8:60])
+    predValidGbmFit<-predict(gbmFit,newdata=validating[,8:60])
+    
+    predValidating<-data.frame(predTrainBagFit=predValidBagFit,
+                               predTrainRfFit=predValidRfFit,
+                               predTrainGbmFit=predValidGbmFit,
+                               classe=validating$classe)
+
+
+    confusionMatrix(predict(gbmBlendingFit,newdata=predValidating),predValidating$classe)
+```
+
+```{r, echo=FALSE,message=FALSE,warning=FALSE}
+    #Test
+    predTestBagFit<-predict(bagFit,newdata=testing[,8:60])
+    predTestRfFit<-predict(rfFit,newdata=testing[,8:60])
+    predTestGbmFit<-predict(gbmFit,newdata=testing[,8:60])
+
+    predTesting<-data.frame(predTrainBagFit=predTestBagFit,
+                           predTrainRfFit=predTestRfFit,
+                           predTrainGbmFit=predTestGbmFit)
+
+    predTesting$predBlendingFit<-predict(gbmBlendingFit,newdata=predTesting)
+```
+
+The blending model was the chosen model for the purpose of evaluation.
+
+###Predictions
+
+The Blending Model was applied to the Testing dataset and its predictions are shown below.
+```{r, echo=FALSE,message=FALSE,warning=FALSE}
+answers = as.character(predTesting$predBlendingFit)
+answers
+```
+
+It predicted correctly 20/20=100% of testing values, which was verified when it was submitted for evaluation in the Coursera Website.
+
+###Conclusion
+
+The results showed that data obtained from accelerometers can be used to predict how the individual is going to execute the exercise. The chosen model predicted with 100% of accuracy in the validation and the testing dataset.
