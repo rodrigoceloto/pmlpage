@@ -17,7 +17,7 @@ The goal of this project is to predict the manner which six individuals performe
 
 It was chosen a Blending model based on three different models, Bagging, Random Forest and Boosting. The Blending model obtained 100% of accuracy and kappa when applied to an out-of-sample validation dataset.
 
-###RMD file
+###Project Files
 
 The RMD and HTML compiled file of this work can be found in the repo: <a href="https://github.com/rodrigoceloto/pmlpage" target="_blank">https://github.com/rodrigoceloto/pmlpage</a>. 
 
